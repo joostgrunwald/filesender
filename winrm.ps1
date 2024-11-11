@@ -46,9 +46,15 @@ try {
 # Setup Wazuh Agent
 try {
     Log-Message "Downloading Wazuh agent..."
-    Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.9.1-1.msi -OutFile $env:tmp\wazuh-agent
+    $timestamp = Get-Date -Format "yyyy-MM-dd-HH.mm"  # Get the current date and time in the desired format
+    $uri = "https://packages.wazuh.com/4.x/windows/wazuh-agent-4.9.1-1.msi"
+    $outFile = "$env:tmp\wazuh-agent"
+    $managerIP = "10.0.1.6"
+    $agentName = "winendpoint-$timestamp"
+    
+    Invoke-WebRequest -Uri $uri -OutFile $outFile
     Log-Message "Installing Wazuh agent..."
-    msiexec.exe /i $env:tmp\wazuh-agent /q WAZUH_MANAGER='10.0.1.6'
+    msiexec.exe /i $outFile /q WAZUH_MANAGER=$managerIP WAZUH_AGENT_NAME=$agentName
     NET START WazuhSvc
     Log-Message "Wazuh agent installed and started successfully."
 } catch {
@@ -154,6 +160,11 @@ try {
 } catch {
     Log-Message "Error installing 7-Zip: $_"
 }
+
+Log-Message "Starting wazuh once more"
+NET START WazuhSvc
+
+Start-Sleep -Seconds 30
 
 # Simulate an APT
 try {
