@@ -168,6 +168,9 @@ try {
     Log-Message "Error during APT simulation: $_"
 }
 
+Log-Message "Starting wazuh once more"
+NET START WazuhSvc
+
 # End logging
 Stop-Transcript
 Log-Message "Script completed."
