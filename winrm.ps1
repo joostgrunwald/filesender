@@ -100,3 +100,50 @@ if ($closingTagPosition -ne -1) {
 }
 
 Restart-Service -Name WazuhSvc
+
+# Install 7zip
+# Define the URL for the 7-Zip installer
+$installerUrl = "https://www.7-zip.org/a/7z1900-x64.exe"  # Change the URL to the latest version if necessary
+$installerPath = "$env:TEMP\7z1900-x64.exe"  # Path to store the installer temporarily
+
+# Download the 7-Zip installer
+Write-Host "Downloading 7-Zip installer..."
+Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+
+# Install 7-Zip silently (no user interaction required)
+Write-Host "Installing 7-Zip..."
+Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+
+# Confirm installation
+Write-Host "7-Zip installation completed."
+
+# Clean up the installer file
+Remove-Item -Path $installerPath -Force
+
+# Simulating an APT
+# Define URLs and paths
+$downloadUrl = "https://github.com/NextronSystems/APTSimulator/releases/download/v0.9.4/APTSimulator_pw_apt.zip"
+$downloadPath = "$env:TEMP\APTSimulator_pw_apt.zip"
+$extractPath = "$env:TEMP\APTSimulator"
+$sevenZipPath = "C:\Program Files\7-Zip\7z.exe"  # Modify this path if 7-Zip is installed elsewhere
+$zipPassword = "apt"  # The password for the ZIP file
+
+# Download the ZIP file
+Write-Host "Downloading APTSimulator package..."
+Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadPath
+
+# Extract the ZIP file using 7-Zip with password
+Write-Host "Extracting APTSimulator package..."
+Start-Process -FilePath $sevenZipPath -ArgumentList "x", $downloadPath, "-o$extractPath", "-p$zipPassword" -Wait
+
+# Add antivirus exception (this is example and may require specific antivirus management commands)
+Write-Host "Adding to antivirus exceptions..."
+Add-MpPreference -ExclusionPath $extractPath
+
+# Run APTSimulator.bat as administrator
+$batchFile = "$extractPath\APTSimulator\APTSimulator.bat"
+
+Write-Host "Running APTSimulator.bat as administrator..."
+Start-Process -FilePath $batchFile -ArgumentList "-b" -Verb RunAs
+
+Write-Host "Process completed."
