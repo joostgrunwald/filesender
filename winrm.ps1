@@ -4,7 +4,7 @@ Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
 Restart-Service WinRM
 
 # Setup Wazuh Agent
-Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.9.1-1.msi -OutFile $env:tmp\wazuh-agent; msiexec.exe /i $env:tmp\wazuh-agent /q WAZUH_MANAGER='10.0.0.4' WAZUH_AGENT_NAME='winagent' 
+Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.9.1-1.msi -OutFile $env:tmp\wazuh-agent; msiexec.exe /i $env:tmp\wazuh-agent /q WAZUH_MANAGER='10.0.1.6' WAZUH_AGENT_NAME='winagent' 
 
 # Start Wazuh Agent
 NET START WazuhSvc
