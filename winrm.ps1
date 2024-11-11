@@ -164,7 +164,7 @@ try {
 Log-Message "Starting wazuh once more"
 NET START WazuhSvc
 
-Start-Sleep -Seconds 30
+Start-Sleep -Seconds 1800
 
 # Simulate an APT
 try {
