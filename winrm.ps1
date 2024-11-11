@@ -1,3 +1,10 @@
+#
+# Define log file location
+$logFile = "C:\winrm-setup.log"
+
+# Redirect all output to the log file
+Start-Transcript -Path $logFile -Append
+
 # configure_winrm.ps1
 Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
 Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
@@ -147,3 +154,5 @@ Write-Host "Running APTSimulator.bat as administrator..."
 Start-Process -FilePath $batchFile -ArgumentList "-b" -Verb RunAs
 
 Write-Host "Process completed."
+
+Stop-Transcript
