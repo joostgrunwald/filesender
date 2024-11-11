@@ -1,158 +1,173 @@
-#
 # Define log file location
 $logFile = "C:\winrm-setup.log"
 
 # Redirect all output to the log file
 Start-Transcript -Path $logFile -Append
 
-# configure_winrm.ps1
-Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
-Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
-Restart-Service WinRM
+# Function to log messages with timestamps
+function Log-Message {
+    param (
+        [string]$message
+    )
+    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $logEntry = "$timestamp - $message"
+    Write-Host $logEntry
+    $logEntry | Out-File -FilePath $logFile -Append
+}
+
+# Log script start
+Log-Message "Script started."
+
+# Configure WinRM
+try {
+    Log-Message "Configuring WinRM..."
+    Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $true
+    Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
+    Restart-Service WinRM
+    Log-Message "WinRM configured successfully."
+} catch {
+    Log-Message "Error configuring WinRM: $_"
+}
 
 # Setup Wazuh Agent
-Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.9.1-1.msi -OutFile $env:tmp\wazuh-agent; msiexec.exe /i $env:tmp\wazuh-agent /q WAZUH_MANAGER='10.0.1.6' 
+try {
+    Log-Message "Downloading Wazuh agent..."
+    Invoke-WebRequest -Uri https://packages.wazuh.com/4.x/windows/wazuh-agent-4.9.1-1.msi -OutFile $env:tmp\wazuh-agent
+    Log-Message "Installing Wazuh agent..."
+    msiexec.exe /i $env:tmp\wazuh-agent /q WAZUH_MANAGER='10.0.1.6'
+    NET START WazuhSvc
+    Log-Message "Wazuh agent installed and started successfully."
+} catch {
+    Log-Message "Error installing or starting Wazuh agent: $_"
+}
 
-# Start Wazuh Agent
-NET START WazuhSvc
+# Install Sysmon
+try {
+    Log-Message "Downloading Sysmon..."
+    Invoke-WebRequest -Uri https://download.sysinternals.com/files/Sysmon.zip -OutFile $env:tmp\Sysmon.zip
+    Log-Message "Extracting Sysmon..."
+    Expand-Archive -Path $env:tmp\Sysmon.zip -DestinationPath $env:tmp\Sysmon
 
-# Install SYSMON
-
-# Download Sysmon
-Invoke-WebRequest -Uri https://download.sysinternals.com/files/Sysmon.zip -OutFile $env:tmp\Sysmon.zip
-Expand-Archive -Path $env:tmp\Sysmon.zip -DestinationPath $env:tmp\Sysmon
-
-# Create Sysmon configuration file (sysconfig.xml)
-$SysmonConfig = @"
+    # Create Sysmon configuration file (sysconfig.xml)
+    $SysmonConfig = @"
 <Sysmon schemaversion="4.10">
    <HashAlgorithms>md5</HashAlgorithms>
    <EventFiltering>
-      <!--SYSMON EVENT ID 1 : PROCESS CREATION-->
       <ProcessCreate onmatch="include">
          <Image condition="contains">mimikatz.exe</Image>
       </ProcessCreate>
-      <!--SYSMON EVENT ID 2 : FILE CREATION TIME RETROACTIVELY CHANGED IN THE FILESYSTEM-->
       <FileCreateTime onmatch="include" />
-      <!--SYSMON EVENT ID 3 : NETWORK CONNECTION INITIATED-->
       <NetworkConnect onmatch="include" />
-      <!--SYSMON EVENT ID 5 : PROCESS ENDED-->
       <ProcessTerminate onmatch="include" />
-      <!--SYSMON EVENT ID 6 : DRIVER LOADED INTO KERNEL-->
       <DriverLoad onmatch="include" />
-      <!--SYSMON EVENT ID 7 : DLL (IMAGE) LOADED BY PROCESS-->
       <ImageLoad onmatch="include" />
-      <!--SYSMON EVENT ID 8 : REMOTE THREAD CREATED-->
       <CreateRemoteThread onmatch="include">
          <SourceImage condition="contains">mimikatz.exe</SourceImage>
       </CreateRemoteThread>
-      <!--SYSMON EVENT ID 9 : RAW DISK ACCESS-->
       <RawAccessRead onmatch="include" />
-      <!--SYSMON EVENT ID 10 : INTER-PROCESS ACCESS-->
       <ProcessAccess onmatch="include">
          <SourceImage condition="contains">mimikatz.exe</SourceImage>
       </ProcessAccess>
-      <!--SYSMON EVENT ID 11 : FILE CREATED-->
       <FileCreate onmatch="include" />
-      <!--SYSMON EVENT ID 12 & 13 & 14 : REGISTRY MODIFICATION-->
       <RegistryEvent onmatch="include" />
-      <!--SYSMON EVENT ID 15 : ALTERNATE DATA STREAM CREATED-->
       <FileCreateStreamHash onmatch="include" />
       <PipeEvent onmatch="include" />
    </EventFiltering>
 </Sysmon>
 "@
+    $SysmonConfigPath = "$env:tmp\Sysmon\sysconfig.xml"
+    $SysmonConfig | Out-File -FilePath $SysmonConfigPath -Encoding utf8
+    Log-Message "Installing Sysmon..."
+    Start-Process -FilePath "$env:tmp\Sysmon\Sysmon64.exe" -ArgumentList "-accepteula -i $SysmonConfigPath" -Wait
+    Log-Message "Sysmon installed successfully."
+} catch {
+    Log-Message "Error installing Sysmon: $_"
+}
 
-$SysmonConfigPath = "$env:tmp\Sysmon\sysconfig.xml"
-$SysmonConfig | Out-File -FilePath $SysmonConfigPath -Encoding utf8
+# Update Wazuh local config to parse malware and Sysmon logs
+try {
+    Log-Message "Updating Wazuh configuration to include Windows Defender and Sysmon logs..."
 
-# Install Sysmon with configuration
-Start-Process -FilePath "$env:tmp\Sysmon\Sysmon64.exe" -ArgumentList "-accepteula -i $SysmonConfigPath" -Wait
-
-# Update Wazuh local conf to also parse malware detections and sysmon detections
-# Define the file path and the content to add
-$WazuhConfigPath = "C:\Program Files (x86)\ossec-agent\ossec.conf"
-$WindowsDefenderConfig = @"
+    $WazuhConfigPath = "C:\Program Files (x86)\ossec-agent\ossec.conf"
+    $WindowsDefenderConfig = @"
 <localfile>
   <location>Microsoft-Windows-Windows Defender/Operational</location>
   <log_format>eventchannel</log_format>
 </localfile>
 "@
 
-$SysmonLogConfig = @"
+    $SysmonLogConfig = @"
 <localfile>
   <location>Microsoft-Windows-Sysmon/Operational</location>
   <log_format>eventchannel</log_format>
 </localfile>
 "@
 
-# Read the content of the ossec.conf file
-$fileContent = Get-Content -Path $WazuhConfigPath
+    # Read the content of the ossec.conf file
+    $fileContent = Get-Content -Path $WazuhConfigPath
+    $closingTagPosition = $fileContent.IndexOf('</ossec_config>')
 
-# Find the position of the closing </ossec_config> tag
-$closingTagPosition = $fileContent.IndexOf('</ossec_config>')
+    if ($closingTagPosition -ne -1) {
+        $beforeClosingTag = $fileContent[0..($closingTagPosition - 1)]
+        $afterClosingTag = $fileContent[($closingTagPosition)..($fileContent.Length - 1)]
+        $newContent = $beforeClosingTag + $WindowsDefenderConfig + $SysmonLogConfig + $afterClosingTag
+        Set-Content -Path $WazuhConfigPath -Value $newContent
+        Log-Message "Windows Defender and Sysmon config added successfully."
+    } else {
+        Log-Message "Error: Closing </ossec_config> tag not found in the Wazuh config file."
+    }
 
-# If the closing tag exists, insert the new configurations before it
-if ($closingTagPosition -ne -1) {
-    $beforeClosingTag = $fileContent[0..($closingTagPosition - 1)]
-    $afterClosingTag = $fileContent[($closingTagPosition)..($fileContent.Length - 1)]
-    
-    # Combine the content with the new configurations before the closing tag
-    $newContent = $beforeClosingTag + $WindowsDefenderConfig + $SysmonLogConfig + $afterClosingTag
-    
-    # Write the modified content back to the file
-    Set-Content -Path $WazuhConfigPath -Value $newContent
-    Write-Host "Windows Defender and Sysmon config added successfully."
-} else {
-    Write-Host "Closing </ossec_config> tag not found in the file."
+    Restart-Service -Name WazuhSvc
+    Log-Message "Wazuh service restarted successfully."
+} catch {
+    Log-Message "Error updating Wazuh configuration: $_"
 }
 
-Restart-Service -Name WazuhSvc
-
 # Install 7zip
-# Define the URL for the 7-Zip installer
-$installerUrl = "https://www.7-zip.org/a/7z1900-x64.exe"  # Change the URL to the latest version if necessary
-$installerPath = "$env:TEMP\7z1900-x64.exe"  # Path to store the installer temporarily
+try {
+    Log-Message "Downloading 7-Zip installer..."
+    $installerUrl = "https://www.7-zip.org/a/7z1900-x64.exe"
+    $installerPath = "$env:TEMP\7z1900-x64.exe"
+    Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
 
-# Download the 7-Zip installer
-Write-Host "Downloading 7-Zip installer..."
-Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
+    Log-Message "Installing 7-Zip..."
+    Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+    Log-Message "7-Zip installation completed."
 
-# Install 7-Zip silently (no user interaction required)
-Write-Host "Installing 7-Zip..."
-Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+    # Clean up installer
+    Remove-Item -Path $installerPath -Force
+    Log-Message "7-Zip installer file removed."
+} catch {
+    Log-Message "Error installing 7-Zip: $_"
+}
 
-# Confirm installation
-Write-Host "7-Zip installation completed."
+# Simulate an APT
+try {
+    Log-Message "Downloading APTSimulator package..."
+    $downloadUrl = "https://github.com/NextronSystems/APTSimulator/releases/download/v0.9.4/APTSimulator_pw_apt.zip"
+    $downloadPath = "$env:TEMP\APTSimulator_pw_apt.zip"
+    $extractPath = "$env:TEMP\APTSimulator"
+    $sevenZipPath = "C:\Program Files\7-Zip\7z.exe"
+    $zipPassword = "apt"
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadPath
 
-# Clean up the installer file
-Remove-Item -Path $installerPath -Force
+    Log-Message "Extracting APTSimulator package..."
+    Start-Process -FilePath $sevenZipPath -ArgumentList "x", $downloadPath, "-o$extractPath", "-p$zipPassword" -Wait
 
-# Simulating an APT
-# Define URLs and paths
-$downloadUrl = "https://github.com/NextronSystems/APTSimulator/releases/download/v0.9.4/APTSimulator_pw_apt.zip"
-$downloadPath = "$env:TEMP\APTSimulator_pw_apt.zip"
-$extractPath = "$env:TEMP\APTSimulator"
-$sevenZipPath = "C:\Program Files\7-Zip\7z.exe"  # Modify this path if 7-Zip is installed elsewhere
-$zipPassword = "apt"  # The password for the ZIP file
+    # Add antivirus exception
+    Log-Message "Adding APTSimulator to antivirus exclusions..."
+    Add-MpPreference -ExclusionPath $extractPath
 
-# Download the ZIP file
-Write-Host "Downloading APTSimulator package..."
-Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadPath
+    # Run APTSimulator
+    $batchFile = "$extractPath\APTSimulator\APTSimulator.bat"
+    Log-Message "Running APTSimulator.bat as administrator..."
+    Start-Process -FilePath $batchFile -ArgumentList "-b" -Verb RunAs
 
-# Extract the ZIP file using 7-Zip with password
-Write-Host "Extracting APTSimulator package..."
-Start-Process -FilePath $sevenZipPath -ArgumentList "x", $downloadPath, "-o$extractPath", "-p$zipPassword" -Wait
+    Log-Message "APT simulation completed."
+} catch {
+    Log-Message "Error during APT simulation: $_"
+}
 
-# Add antivirus exception (this is example and may require specific antivirus management commands)
-Write-Host "Adding to antivirus exceptions..."
-Add-MpPreference -ExclusionPath $extractPath
-
-# Run APTSimulator.bat as administrator
-$batchFile = "$extractPath\APTSimulator\APTSimulator.bat"
-
-Write-Host "Running APTSimulator.bat as administrator..."
-Start-Process -FilePath $batchFile -ArgumentList "-b" -Verb RunAs
-
-Write-Host "Process completed."
-
+# End logging
 Stop-Transcript
+Log-Message "Script completed."
