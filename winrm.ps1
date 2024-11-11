@@ -2,7 +2,7 @@
 $logFile = "C:\winrm-setup.log"
 
 # Redirect all output to the log file
-Start-Transcript -Path $logFile -Append
+#Start-Transcript -Path $logFile -Append
 
 # Function to log messages with timestamps
 function Log-Message {
@@ -24,9 +24,9 @@ function Is-Admin {
 
 # Log if running as admin or not
 if (Is-Admin) {
-    Write-Host "The script is running with Administrator privileges." | Tee-Object -FilePath $logFile
+    Log-Message "The script is running with Administrator privileges." | Tee-Object -FilePath $logFile
 } else {
-    Write-Host "The script is NOT running with Administrator privileges." | Tee-Object -FilePath $logFile
+    Log-Message "The script is NOT running with Administrator privileges." | Tee-Object -FilePath $logFile
 }
 
 # Log script start
@@ -186,5 +186,4 @@ Log-Message "Starting wazuh once more"
 NET START WazuhSvc
 
 # End logging
-Stop-Transcript
 Log-Message "Script completed."
