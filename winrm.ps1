@@ -15,6 +15,20 @@ function Log-Message {
     $logEntry | Out-File -FilePath $logFile -Append
 }
 
+# Function to check if the script is running as Administrator
+function Is-Admin {
+    $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $currentPrincipal = New-Object System.Security.Principal.WindowsPrincipal($currentIdentity)
+    return $currentPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# Log if running as admin or not
+if (Is-Admin) {
+    Write-Host "The script is running with Administrator privileges." | Tee-Object -FilePath $logFile
+} else {
+    Write-Host "The script is NOT running with Administrator privileges." | Tee-Object -FilePath $logFile
+}
+
 # Log script start
 Log-Message "Script started."
 
