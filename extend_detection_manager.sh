@@ -91,6 +91,62 @@ EOF
     fi
 }
 
+# Function to create the malware-hashes CDB list
+create_malware_hashes_list() {
+    echo "Creating malware-hashes CDB list..."
+    MALWARE_HASHES_FILE="/var/ossec/etc/lists/malware-hashes"
+
+    sudo tee "$MALWARE_HASHES_FILE" > /dev/null << 'EOF'
+e0ec2cd43f71c80d42cd7b0f17802c73:mirai
+55142f1d393c5ba7405239f232a6c059:Xbash
+EOF
+    echo "Malware hashes list created."
+}
+
+# Function to update ossec.conf to reference the malware-hashes CDB list
+update_ossec_conf() {
+    echo "Updating /var/ossec/etc/ossec.conf to reference the malware-hashes CDB list..."
+
+    OSSEC_CONF_FILE="/var/ossec/etc/ossec.conf"
+
+    # Backup ossec.conf
+    sudo cp "$OSSEC_CONF_FILE" "${OSSEC_CONF_FILE}.bak"
+
+    # Add the reference to the malware-hashes list if it doesn't already exist
+    if ! sudo grep -q '<list>etc/lists/malware-hashes</list>' "$OSSEC_CONF_FILE"; then
+        sudo sed -i '/<ruleset>/a \
+    <list>etc/lists/malware-hashes</list>' "$OSSEC_CONF_FILE"
+        echo "Added malware-hashes list to ossec.conf."
+    else
+        echo "malware-hashes list is already referenced in ossec.conf."
+    fi
+}
+
+# Function to append malware detection rules
+append_malware_rules() {
+    echo "Appending malware detection rules to /var/ossec/etc/rules/local_rules.xml..."
+
+    LOCAL_RULES_FILE="/var/ossec/etc/rules/local_rules.xml"
+
+    if ! sudo grep -q '<group name="malware,">' "$LOCAL_RULES_FILE"; then
+        sudo tee -a "$LOCAL_RULES_FILE" > /dev/null << 'EOF'
+<group name="malware,">
+  <rule id="110002" level="13">
+    <if_sid>554, 550</if_sid>
+    <list field="md5" lookup="match_key">etc/lists/malware-hashes</list>
+    <description>File with known malware hash detected: $(file)</description>
+    <mitre>
+      <id>T1204.002</id>
+    </mitre>
+  </rule>
+</group>
+EOF
+        echo "Malware detection rules appended to local_rules.xml."
+    else
+        echo "Malware detection rules already exist in local_rules.xml."
+    fi
+}
+
 # Function to create comm_persist_tech_rules.xml with SSH authorized keys persistence rules
 create_comm_persist_tech_rules() {
     echo "Creating /var/ossec/etc/rules/comm_persist_tech_rules.xml with SSH authorized keys persistence rules..."
@@ -171,6 +227,9 @@ main() {
     append_local_rules
     create_comm_persist_tech_rules
     create_common_persist_techniques_rules
+    create_malware_hashes_list
+    update_ossec_conf
+    append_malware_rules
     restart_wazuh_manager
     echo "Wazuh Manager configuration completed successfully."
 }
