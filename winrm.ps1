@@ -199,4 +199,3 @@ NET START WazuhSvc
 # End logging
 Log-Message "Script completed."
 
-invoke-mimikatz
